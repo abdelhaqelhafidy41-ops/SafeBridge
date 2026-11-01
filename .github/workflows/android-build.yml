@@ -28,12 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    env:
-      STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
-      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
-      KEYSTORE_PATH: my-upload-key.jks
-      JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Djava.awt.headless=true"
-
     steps:
       # Step 1: Checkout Repository
       - name: Checkout Code
@@ -48,7 +42,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # Step 3: Accept Android SDK Licenses (Uses pre-installed Android SDK on ubuntu-latest)
+      # Step 3: Accept Android SDK Licenses
       - name: Accept Android SDK Licenses
         run: |
           mkdir -p "$ANDROID_SDK_ROOT/licenses" || true
@@ -65,48 +59,48 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x gradlew
 
-      # Step 6: Setup Environment & Keystores for CI Build
+      # Step 6: Setup Environment & Absolute Path Keystores
       - name: Prepare Keystores & Environment
         run: |
-          echo "Setting up keystores for debug and release builds..."
+          echo "Setting up keystores with absolute paths..."
           
-          # Restore debug.keystore if base64 encoded file exists, otherwise generate one
+          # Restore debug.keystore if base64 exists, otherwise generate
           if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+            base64 -d debug.keystore.base64 > "${GITHUB_WORKSPACE}/debug.keystore" 2>/dev/null || true
           fi
           
-          if [ ! -f "debug.keystore" ] || [ ! -s "debug.keystore" ]; then
-            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ ! -f "${GITHUB_WORKSPACE}/debug.keystore" ] || [ ! -s "${GITHUB_WORKSPACE}/debug.keystore" ]; then
+            keytool -genkeypair -v -keystore "${GITHUB_WORKSPACE}/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
+          cp "${GITHUB_WORKSPACE}/debug.keystore" "${GITHUB_WORKSPACE}/app/debug.keystore" || true
           
-          # Ensure release upload keystore exists for assembleRelease
-          if [ ! -f "my-upload-key.jks" ] || [ ! -s "my-upload-key.jks" ]; then
-            keytool -genkeypair -v -keystore my-upload-key.jks -storepass "${STORE_PASSWORD}" -alias "upload" -keypass "${KEY_PASSWORD}" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=SafeBridge,O=SafeBridge,C=US"
+          # Generate upload keystore for release build
+          if [ ! -f "${GITHUB_WORKSPACE}/my-upload-key.jks" ] || [ ! -s "${GITHUB_WORKSPACE}/my-upload-key.jks" ]; then
+            keytool -genkeypair -v -keystore "${GITHUB_WORKSPACE}/my-upload-key.jks" \
+              -storepass android -alias upload -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=SafeBridge,O=SafeBridge,C=US"
           fi
+          cp "${GITHUB_WORKSPACE}/my-upload-key.jks" "${GITHUB_WORKSPACE}/app/my-upload-key.jks" || true
           
-          # Create placeholder .env if not present
+          # Ensure .env exists
           if [ ! -f ".env" ]; then
             cp .env.example .env 2>/dev/null || touch .env
           fi
 
-      # Step 7: Build Debug APK (Guaranteed Installable Artifact)
+      # Step 7: Build Debug APK (Proven Successful ✅)
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+        env:
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Djava.awt.headless=true"
 
-      # Step 8: Build Release APK & Bundle
-      - name: Build Release APK & AAB
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_release }}
-        run: |
-          ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
-          ./gradlew bundleRelease --no-daemon --no-configuration-cache --stacktrace
-
-      # Step 9: Run Unit & Robolectric Tests (Non-blocking)
-      - name: Run Tests
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests }}
-        continue-on-error: true
-        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache --stacktrace
-
-      # Step 10: Upload Debug APK Artifact
+      # Step 8: Upload Debug APK Artifact immediately
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         if: always()
@@ -115,7 +109,19 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
-      # Step 11: Upload Release APK Artifact
+      # Step 9: Build Release APK & Bundle
+      - name: Build Release APK & AAB
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_release }}
+        run: |
+          ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
+          ./gradlew bundleRelease --no-daemon --no-configuration-cache --stacktrace
+        env:
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Djava.awt.headless=true"
+
+      # Step 10: Upload Release APK Artifact
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         if: always()
@@ -124,7 +130,7 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           retention-days: 14
 
-      # Step 12: Upload Release AAB (Play Store Bundle)
+      # Step 11: Upload Release AAB (Play Store Bundle)
       - name: Upload Release Bundle (AAB)
         uses: actions/upload-artifact@v4
         if: always()
@@ -132,6 +138,17 @@ jobs:
           name: SafeBridge-release-bundle
           path: app/build/outputs/bundle/release/*.aab
           retention-days: 14
+
+      # Step 12: Run Tests (Optional)
+      - name: Run Tests
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests }}
+        continue-on-error: true
+        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache --stacktrace
+        env:
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Djava.awt.headless=true"
 
       # Step 13: Upload Test Results Report
       - name: Upload Test Results

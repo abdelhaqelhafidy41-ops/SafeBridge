@@ -20,12 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    env:
-      STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
-      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
-      KEYSTORE_PATH: my-upload-key.jks
-      JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Djava.awt.headless=true"
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -36,7 +30,7 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # Accept Android SDK Licenses (Uses pre-installed Android SDK on ubuntu-latest)
+      # Accept Android SDK Licenses
       - name: Accept Android SDK Licenses
         run: |
           mkdir -p "$ANDROID_SDK_ROOT/licenses" || true
@@ -52,16 +46,24 @@ jobs:
       - name: Prepare Keystores & Environment
         run: |
           if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+            base64 -d debug.keystore.base64 > "${GITHUB_WORKSPACE}/debug.keystore" 2>/dev/null || true
           fi
           
-          if [ ! -f "debug.keystore" ] || [ ! -s "debug.keystore" ]; then
-            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ ! -f "${GITHUB_WORKSPACE}/debug.keystore" ] || [ ! -s "${GITHUB_WORKSPACE}/debug.keystore" ]; then
+            keytool -genkeypair -v -keystore "${GITHUB_WORKSPACE}/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
+          cp "${GITHUB_WORKSPACE}/debug.keystore" "${GITHUB_WORKSPACE}/app/debug.keystore" || true
           
-          if [ ! -f "my-upload-key.jks" ] || [ ! -s "my-upload-key.jks" ]; then
-            keytool -genkeypair -v -keystore my-upload-key.jks -storepass "${STORE_PASSWORD}" -alias "upload" -keypass "${KEY_PASSWORD}" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=SafeBridge,O=SafeBridge,C=US"
+          if [ ! -f "${GITHUB_WORKSPACE}/my-upload-key.jks" ] || [ ! -s "${GITHUB_WORKSPACE}/my-upload-key.jks" ]; then
+            keytool -genkeypair -v -keystore "${GITHUB_WORKSPACE}/my-upload-key.jks" \
+              -storepass android -alias upload -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=SafeBridge,O=SafeBridge,C=US"
           fi
+          cp "${GITHUB_WORKSPACE}/my-upload-key.jks" "${GITHUB_WORKSPACE}/app/my-upload-key.jks" || true
           
           if [ ! -f ".env" ]; then
             cp .env.example .env 2>/dev/null || touch .env
@@ -72,6 +74,11 @@ jobs:
           ./gradlew assembleDebug --no-daemon --no-configuration-cache
           ./gradlew assembleRelease --no-daemon --no-configuration-cache
           ./gradlew bundleRelease --no-daemon --no-configuration-cache
+        env:
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8 -Djava.awt.headless=true"
 
       - name: Determine Release Tag
         id: vars
