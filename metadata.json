@@ -1,0 +1,6 @@
+{
+  "name": "SafeBridge",
+  "description": "Secure Android Binder IPC, Local Sandbox Task Execution & Restricted Safe ADB Controller",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">SafeBridge</string>
+    <string name="service_title">خدمة SafeBridge IPC</string>
+    <string name="nav_dashboard">الرئيسية</string>
+    <string name="nav_service">الخدمة</string>
+    <string name="nav_clients">العملاء</string>
+    <string name="nav_sandbox">بيئة العزل</string>
+    <string name="nav_adb">ADB الآمن</string>
+    <string name="nav_logs">السجلات</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="nav_about">عن التطبيق</string>
+</resources>
