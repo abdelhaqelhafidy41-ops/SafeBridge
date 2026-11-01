@@ -36,12 +36,12 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
+      # Accept Android SDK Licenses (Uses pre-installed Android SDK on ubuntu-latest)
       - name: Accept Android SDK Licenses
         run: |
-          yes | sdkmanager --licenses || true
+          mkdir -p "$ANDROID_SDK_ROOT/licenses" || true
+          echo -e "24333f8a63565f179720b422a7e4e64118d3742c\n89337d0c3dbb327e517b3123bc8b54213070e2d3\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > "$ANDROID_SDK_ROOT/licenses/android-sdk-license"
+          yes | sdkmanager --licenses 2>/dev/null || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
